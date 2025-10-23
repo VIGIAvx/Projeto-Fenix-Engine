@@ -3,16 +3,9 @@
 
 from fi_runtime_core import FenixExecutionEngine
 from fi_transmuter_ia import Transmutar_Codigo
-# Importamos AlgoritmoOtimo para criar um objeto que o SAI consiga agendar
 from fi_knowledge_base import AlgoritmoOtimo, BancoAlgoritmosOtimos
 
 # --- Configuração de Métodos de Serviço (Mocks Mínimos) ---
-
-# A FenixExecutionEngine agora usa as classes reais PDH, CAH e SAI
-# Apenas os métodos de serviço (lambda functions) são mantidos como mocks.
-
-# NOTE: A função Coletar_Metricas_Execucao foi removida pois a métrica é coletada
-# e salva DIRETAMENTE na engine (self.metricas_coletadas)
 FenixExecutionEngine.Agendar_Tarefa_Compatibilidade = lambda self, ceo: print(f"     > Tarefa CEO Agendada: {ceo}")
 
 
@@ -42,7 +35,7 @@ blocos_otimizados = Transmutar_Codigo(codigo_legado, engine_fenix)
 
 # 5. Agendar os blocos otimizados (Execução Real)
 print("\n---------------------------------------------------")
-print("SIMULANDO: Agendamento e Execução (SAI e CAH Reais)")
+print("SIMULANDO: Agendamento e Execução (CAH Multiprocessamento)")
 print("---------------------------------------------------")
 
 class BlocoCIO:
@@ -52,15 +45,25 @@ class BlocoCIO:
         self.custo_cpu = custo_cpu
         self.tipo_calculo = tipo_calculo
 
+# Criamos mais blocos para simular carga
 bloco_exemplo_1 = BlocoCIO(ID="CIO_1", nome="Processamento Gráfico", custo_cpu=50, tipo_calculo="GPU_Intenso")
 bloco_exemplo_2 = BlocoCIO(ID="CIO_2", nome="Cálculo Algébrico", custo_cpu=200, tipo_calculo="CPU_Intenso")
+bloco_exemplo_3 = BlocoCIO(ID="CIO_3", nome="Análise de Dados", custo_cpu=150, tipo_calculo="CPU_Intenso")
+bloco_exemplo_4 = BlocoCIO(ID="CIO_4", nome="Renderização", custo_cpu=70, tipo_calculo="CPU_Intenso")
 
-# Guarda o custo inicial do QuickSort para comparação (será 8)
+# Guarda o custo inicial do QuickSort para comparação (Agora está DEPOIS da inicialização da engine)
 custo_inicial_quick_sort = engine_fenix.BAO.mapa_otimizacao["Problema B: Cálculo O(n^2)"].custo_cpu
 
-engine_fenix.Agendar_Tarefas([bloco_exemplo_1, bloco_exemplo_2])
+engine_fenix.Agendar_Tarefas([bloco_exemplo_1, bloco_exemplo_2, bloco_exemplo_3, bloco_exemplo_4])
 
 print(f"\n[Verificação Inicial]: Custo CPU do QuickSort ANTES do PGO: {custo_inicial_quick_sort:.2f}")
+
+# --- FECHAMENTO DO POOL DE PROCESSOS (CRÍTICO) ---
+cpu_pool_recurso = next((r for r in engine_fenix.Recursos_UHE if r.tipo == "CPU"), None)
+if cpu_pool_recurso and cpu_pool_recurso.pool:
+    cpu_pool_recurso.pool.close()
+    cpu_pool_recurso.pool.join()
+    print("--- CAH: Pool de Processos da CPU FINALIZADO com sucesso. ---")
 
 
 # 6. INICIAR O CICLO DE AUTO-REFLEXÃO (MTA-PGO)
