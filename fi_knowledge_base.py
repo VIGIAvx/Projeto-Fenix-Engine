@@ -1,4 +1,6 @@
 # fi_knowledge_base.py
+# Adicionando psutil para perfilamento real de hardware (PDH)
+import psutil
 
 class AlgoritmoOtimo:
     """Representa um algoritmo otimizado e seus custos conhecidos."""
@@ -11,13 +13,14 @@ class AlgoritmoOtimo:
 class BancoAlgoritmosOtimos:
     """
     BAO (Banco de Algoritmos Ótimos). 
-    Armazena mapeamentos de problemas (ineficientes) para soluções (ótimas).
+    Mapeamento de problemas (ineficientes) para soluções (ótimas).
     """
     def __init__(self):
         self.mapa_otimizacao = {
             "Problema B: Cálculo O(n^2)": AlgoritmoOtimo("QuickSort Paralelo", "O(n log n)", 5, 8),
             "Problema de Busca Lenta": AlgoritmoOtimo("Hash Index Lookup", "O(1)", 2, 1),
-            "Problema de I/O Pesado": AlgoritmoOtimo("Leitura Assíncrona Chunked", "O(k)", 100, 3), # Custo IO alto
+            # Custo IO alto para forçar o refinamento
+            "Problema de I/O Pesado": AlgoritmoOtimo("Leitura Assíncrona Chunked", "O(k)", 100, 3), 
             "Problema Não Identificado": AlgoritmoOtimo("Algoritmo Legado", "O(n!)", 100, 100)
         }
 
@@ -27,36 +30,43 @@ class BancoAlgoritmosOtimos:
             self.mapa_otimizacao["Problema Não Identificado"]
         )
 
-# --- NOVAS IMPLEMENTAÇÕES DE HARDWARE E CUSTO ---
-
 class ModeloCustoAbstrato:
-    """MCA (Modelo de Custo Abstrato). Armazena os parâmetros de custo calibrados."""
+    """MCA (Modelo de Custo Abstrato). Parâmetros de custo calibrados."""
     def __init__(self, limite_io, fator_cpu_core):
         self.limite_aceitavel_IO = limite_io
         self.fator_cpu_core = fator_cpu_core
-        print(f"  [MCA]: Calibrado. Fator CPU: {fator_cpu_core}x.")
+        print(f"  [MCA]: Calibrado. Fator CPU: {fator_cpu_core}x. Limite IO: {limite_io}.")
 
 class PerfilamentoDinamicoHardware:
     """
-    PDH (Perfilamento Dinâmico de Hardware). 
+    PDH (Perfilamento Dinâmico de Hardware) REAL. 
     Mede o hardware e calibra o MCA.
     """
     @staticmethod
     def Calibrar_Custos_Hardware(hardware_profile):
-        """Simula a medição de latência do hardware para criar o MCA."""
+        print(f"  [PDH Real]: Perfilando ambiente usando psutil...")
 
-        # Lógica real: rodaria benchmarks no Termux
-        if "AndroidTermux" in hardware_profile:
-            limite_io_calibrado = 15 # Termux/Flash I/O é lento
-            fator_cpu = 1.2
-        elif "Servidor_Xeon" in hardware_profile:
-            limite_io_calibrado = 5 # I/O é rápido
-            fator_cpu = 4.0
+        # 1. Medição da CPU
+        num_cores = psutil.cpu_count(logical=True)
+        # Fator de calibração: CPUs mais lentas (menos núcleos) recebem um fator menor.
+        fator_cpu = max(1.0, num_cores / 4) 
+
+        # 2. Medição de I/O (Simulação empírica baseada em memória)
+        # Medir I/O real em um ambiente como Termux é complexo. Usamos a RAM livre 
+        # como um proxy: pouca RAM livre -> mais uso de swap -> latência de I/O maior.
+        memoria = psutil.virtual_memory()
+        ram_disponivel_gb = memoria.available / (1024 ** 3)
+
+        # Limite IO: Se a RAM livre for menor que 1GB, aumentamos o limite 
+        # (tornamos o sistema mais sensível a I/O pesada).
+        if ram_disponivel_gb < 1.0:
+             limite_io_calibrado = 15 # Mais sensível ao I/O
+             ram_status = "CRÍTICO"
         else:
-            limite_io_calibrado = 10
-            fator_cpu = 1.0
+             limite_io_calibrado = 8 # Menos sensível ao I/O
+             ram_status = "OK"
 
-        print(f"  [PDH]: Perfilando '{hardware_profile}'...")
+        print(f"  [PDH Status]: Cores: {num_cores}, RAM Livre: {ram_disponivel_gb:.2f} GB ({ram_status})")
         return ModeloCustoAbstrato(limite_io_calibrado, fator_cpu)
 
 
