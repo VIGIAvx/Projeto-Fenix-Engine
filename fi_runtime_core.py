@@ -4,13 +4,16 @@
 # Importa a Base de Conhecimento real (PDH, MCA, BAO, MARI)
 from fi_knowledge_base import (
     BancoAlgoritmosOtimos, 
-    ModuloAutoReflexaoIntegridade,
     PerfilamentoDinamicoHardware,
-    ModeloCustoAbstrato
+    ModeloCustoAbstrato,
+    ModuloAutoReflexaoIntegridade # <-- RE-ADICIONADO
 )
 
 # Importa as classes reais de Agendamento e Abstração (SAI e CAH)
 from fi_scheduling_sai import ServicoAgendamentoInteligente, CamadaAbstracaoHeterogenea
+
+# Importa o novo módulo de Otimização e o controlador MARI
+from fi_auto_optimization import ModuloAutoReflexaoIntegridade as MARI_Controlador
 
 
 class FenixExecutionEngine:
@@ -19,21 +22,25 @@ class FenixExecutionEngine:
     CAH = CamadaAbstracaoHeterogenea
     SAI = ServicoAgendamentoInteligente
 
-    class MTA_PGO: pass # Motor de Transmutação Algorítmica (PGO) - Placeholder
+    class MTA_PGO: pass # Placeholder para a classe PGO
 
     def __init__(self, hardware_profile):
-        # 1. MCA (Modelo de Custo Abstrato) – Calibrado pelo PDH real
+        # 1. Lista de Métricas Coletadas (Para o ciclo PGO)
+        self.metricas_coletadas = []
+
+        # 2. MCA (Modelo de Custo Abstrato) – Calibrado pelo PDH real
         self.MCA = self.PDH.Calibrar_Custos_Hardware(hardware_profile) 
 
-        # 2. Inicializa o MARI e o BAO
+        # 3. Inicializa o BAO
         self.BAO = BancoAlgoritmosOtimos() 
-        self.MARI = ModuloAutoReflexaoIntegridade(self.BAO)
 
-        # 3. Carrega e verifica o BAO (usando o MARI)
+        # 4. Inicializa o MARI e carrega o BAO <-- CORRIGIDO AQUI
+        self.MARI = ModuloAutoReflexaoIntegridade(self.BAO) 
         self.BAO = self.MARI.Carregar_Banco_Integridade()
 
-        # 4. Pool de Recursos (CAH Real)
+        # 5. Pool de Recursos (CAH Real)
         self.Recursos_UHE = self.CAH.Gerar_Pool_Recursos(GPU=True, CPU_cores=True, MCA=self.MCA)
+
 
     # --- Serviço de Agendamento Inteligente (SAI) ---
     def Agendar_Tarefas(self, CIO_paralelizado):
@@ -42,18 +49,19 @@ class FenixExecutionEngine:
             # O SAI usa o MCA para decidir
             recurso_otimo = self.SAI.Escolher_Recurso(bloco, self.Recursos_UHE, self.MCA)
             self.CAH.Executar_Bloco(bloco, recurso_otimo)
-            self.Coletar_Metricas_Execucao(bloco.ID, recurso_otimo.custo_por_ciclo) 
 
-    # --- Serviço de I/O Assíncrona Totalmente Gerenciada (EAT) ---
-    def EAT_Pré_Carregar(self, lista_IO):
-        # Lógica de I/O Assíncrona (Placeholder)
-        for operacao in lista_IO:
-            self.CAH.Iniciar_IO_Assincrona(operacao, prioridade="Fenix_MAX")
+            # Métrica de Latência: A métrica é coletada e SALVA para o PGO
+            custo_execucao_simulado = recurso_otimo.custo_por_ciclo # Simula o custo real
+            self.metricas_coletadas.append((bloco.ID, custo_execucao_simulado))
+            print(f"     > Métrica de Execução Coletada para {bloco.ID}. Custo: {custo_execucao_simulado:.2f}")
 
-    # --- Módulo de Auto-Reflexão e Integridade (MARI) ---
-    def Autoverificar_Sistema(self):
-        if self.MARI.Verificar_Coerencia(self.BAO) == False:
-            self.Reiniciar_MTA_Otimizacao() 
-        self.MARI.Auto_Otimizar_Codigo_Interno()
+    # --- Módulo de Auto-Reflexão e Otimização (MARI/PGO) ---
+    def Auto_Reflexao_E_PGO(self):
+        """Inicia o ciclo de Otimização Guiada por Perfil após a execução."""
+        print("\n---------------------------------------------------")
+        print("INICIANDO: Ciclo de Auto-Reflexão (MARI/PGO)")
+        print("---------------------------------------------------")
 
+        # Chama o controlador estático do MARI (que instancia e roda o PGO)
+        MARI_Controlador.Gerenciar_PGO_e_BAO(self, self.metricas_coletadas)
 
