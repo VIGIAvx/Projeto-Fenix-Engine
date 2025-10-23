@@ -17,14 +17,17 @@ class MotorTransmutacaoAlgoritmica_PGO:
 
         # Simulação de Ajuste: Itera sobre as métricas coletadas pelo motor
         for ID, custo_real in lista_metricas:
-            # Lógica: Se o custo real for muito baixo (bom), tentamos melhorar o custo estimado
+            # Lógica: Se o custo real for muito baixo (bom, < 0.1), melhoramos o custo estimado
             if custo_real < 0.1 and self.BAO.mapa_otimizacao["Problema B: Cálculo O(n^2)"].custo_cpu > 1.0:
 
-                # Acessa o objeto QuickSort Paralelo e diminui o custo estimado
-                algoritmo = self.BAO.mapa_otimizacao["Problema B: Cálculo O(n^2)"]
+                problema = "Problema B: Cálculo O(n^2)"
+                algoritmo = self.BAO.mapa_otimizacao[problema]
                 algoritmo.custo_cpu *= 0.9 # Reduz o custo CPU em 10%
 
-                print(f"  [PGO-Ajuste]: Otimização confirmada para {algoritmo.nome}. Novo Custo CPU: {algoritmo.custo_cpu:.2f}")
+                # CHAMA O NOVO MÉTODO DE PERSISTÊNCIA DO BAO!
+                self.BAO.Salvar_Algoritmo_Ajustado(problema, algoritmo)
+
+                print(f"  [PGO-Ajuste]: Otimização confirmada para {algoritmo.nome}. Novo Custo CPU: {algoritmo.custo_cpu:.2f} (Persistente)")
                 ajustes_feitos += 1
 
         print(f"  [MTA-PGO]: Ciclo PGO concluído. {ajustes_feitos} algoritmos ajustados.")
