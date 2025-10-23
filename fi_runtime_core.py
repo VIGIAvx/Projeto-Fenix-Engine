@@ -6,20 +6,20 @@ from fi_knowledge_base import (
     BancoAlgoritmosOtimos, 
     ModuloAutoReflexaoIntegridade,
     PerfilamentoDinamicoHardware,
-    ModeloCustoAbstrato # O MCA é a instância, mas a classe é usada como tipo
+    ModeloCustoAbstrato
 )
+
+# Importa as classes reais de Agendamento e Abstração (SAI e CAH)
+from fi_scheduling_sai import ServicoAgendamentoInteligente, CamadaAbstracaoHeterogenea
 
 
 class FenixExecutionEngine:
-    # --- Módulos Principais (Classes Reais ou Placeholders) ---
-    # PDH será a classe real (PerfilamentoDinamicoHardware)
+    # --- Módulos Principais (Classes Reais) ---
     PDH = PerfilamentoDinamicoHardware 
+    CAH = CamadaAbstracaoHeterogenea
+    SAI = ServicoAgendamentoInteligente
 
-    class CAH: pass # Camada de Abstração Heterogênea (Placeholder para Implementação de Baixo Nível)
-    class SAI: pass # Serviço de Agendamento Inteligente (Placeholder)
-    class MTA_PGO: pass # Motor de Transmutação Algorítmica (PGO)
-
-    # MARI e BAO são inicializados na função __init__
+    class MTA_PGO: pass # Motor de Transmutação Algorítmica (PGO) - Placeholder
 
     def __init__(self, hardware_profile):
         # 1. MCA (Modelo de Custo Abstrato) – Calibrado pelo PDH real
@@ -32,18 +32,17 @@ class FenixExecutionEngine:
         # 3. Carrega e verifica o BAO (usando o MARI)
         self.BAO = self.MARI.Carregar_Banco_Integridade()
 
-        # 4. Pool de Recursos (Abstração Heterogênea)
-        # O recurso UHE é baseado nos dados do MCA/PDH
+        # 4. Pool de Recursos (CAH Real)
         self.Recursos_UHE = self.CAH.Gerar_Pool_Recursos(GPU=True, CPU_cores=True, MCA=self.MCA)
 
     # --- Serviço de Agendamento Inteligente (SAI) ---
     def Agendar_Tarefas(self, CIO_paralelizado):
-        # Lógica de Agendamento e Migração (Placeholder)
+        # Lógica de Agendamento e Migração (SAI Real)
         for bloco in CIO_paralelizado:
             # O SAI usa o MCA para decidir
-            recurso_otimo = self.SAI.Escolher_Recurso(bloco.tipo_calculo, self.Recursos_UHE, self.MCA)
+            recurso_otimo = self.SAI.Escolher_Recurso(bloco, self.Recursos_UHE, self.MCA)
             self.CAH.Executar_Bloco(bloco, recurso_otimo)
-            self.Coletar_Metricas_Execucao(bloco.ID, recurso_otimo.latencia) 
+            self.Coletar_Metricas_Execucao(bloco.ID, recurso_otimo.custo_por_ciclo) 
 
     # --- Serviço de I/O Assíncrona Totalmente Gerenciada (EAT) ---
     def EAT_Pré_Carregar(self, lista_IO):
@@ -54,7 +53,7 @@ class FenixExecutionEngine:
     # --- Módulo de Auto-Reflexão e Integridade (MARI) ---
     def Autoverificar_Sistema(self):
         if self.MARI.Verificar_Coerencia(self.BAO) == False:
-            # Se incoerente, reinicia a otimização
             self.Reiniciar_MTA_Otimizacao() 
         self.MARI.Auto_Otimizar_Codigo_Interno()
+
 
