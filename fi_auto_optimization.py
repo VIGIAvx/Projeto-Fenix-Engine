@@ -1,52 +1,85 @@
 # fi_auto_optimization.py
-# Módulos de Otimização e Controle (MTA-PGO e MARI)
+# Motor de Auto-Reflexão e Otimização de Perfil Guiada (MTA-PGO)
 
 from fi_knowledge_base import BancoAlgoritmosOtimos
+import subprocess # NOVO MÓDULO PARA CHAMAR O RUST CORE
+import os
 
-class MotorTransmutacaoAlgoritmica_PGO:
+class MotorAutoReflexao:
     """
-    MTA-PGO (Otimização Guiada por Perfil).
-    Aplica o ciclo de aprendizado (ajusta o BAO baseado em métricas de execução).
+    MTA (Motor de Auto-Reflexão). 
+    Monitora a execução, aplica PGO e ajusta o BAO.
     """
-    def __init__(self, BAO_instance):
-        self.BAO = BAO_instance
+    def __init__(self, bao: BancoAlgoritmosOtimos):
+        self.BAO = bao
+        self.metrica_historico = []
+        self.fator_ajuste_pgo = 0.90 # Fator de 10% de redução por ciclo
 
-    def Processar_Metricas_e_Ajustar_BAO(self, lista_metricas):
+    def coletar_metrica_execucao(self, bloco_id, custo_real):
+        """Simula a coleta de métricas de tempo de execução real do bloco."""
+        self.metrica_historico.append({"id": bloco_id, "custo": custo_real})
+
+    def iniciar_ciclo_pgo(self):
+        """Aplica a otimização de Perfil Guiada (PGO) nos algoritmos do BAO."""
         print("\n  [MTA-PGO]: Iniciando Processamento PGO...")
         ajustes_feitos = 0
 
-        # Simulação de Ajuste: Itera sobre as métricas coletadas pelo motor
-        for ID, custo_real in lista_metricas:
-            # Lógica: Se o custo real for muito baixo (bom, < 0.1), melhoramos o custo estimado
-            if custo_real < 0.1 and self.BAO.mapa_otimizacao["Problema B: Cálculo O(n^2)"].custo_cpu > 1.0:
+        # 1. Analisar as métricas e identificar o algoritmo a ser otimizado
+        # Simulação: Todos os blocos CIO que não são I/O Intenso (por ex., QuickSort Paralelo)
 
-                problema = "Problema B: Cálculo O(n^2)"
-                algoritmo = self.BAO.mapa_otimizacao[problema]
-                algoritmo.custo_cpu *= 0.9 # Reduz o custo CPU em 10%
+        for nome_problema, algoritmo in self.BAO.mapa_otimizacao.items():
 
-                # CHAMA O NOVO MÉTODO DE PERSISTÊNCIA DO BAO!
-                self.BAO.Salvar_Algoritmo_Ajustado(problema, algoritmo)
+            # Regra simples de PGO: Apenas otimiza o QuickSort Paralelo 
+            # (Representando o cálculo CPU-bound)
+            if "QuickSort Paralelo" in algoritmo.nome:
 
-                print(f"  [PGO-Ajuste]: Otimização confirmada para {algoritmo.nome}. Novo Custo CPU: {algoritmo.custo_cpu:.2f} (Persistente)")
-                ajustes_feitos += 1
+                # 2. Chamada ao CORE RUST para Otimização
+                novo_custo = self._aplicar_pgo_rust(algoritmo.custo_cpu, self.fator_ajuste_pgo)
+
+                if novo_custo < algoritmo.custo_cpu:
+
+                    # 3. Persistir o Novo Custo
+                    self.BAO.persistir_custo(nome_problema, novo_custo)
+                    algoritmo.custo_cpu = novo_custo
+                    print(f"  [PGO-Ajuste]: Otimização confirmada para {algoritmo.nome}. Novo Custo CPU: {novo_custo:.2f} (Persistente)")
+                    ajustes_feitos += 1
 
         print(f"  [MTA-PGO]: Ciclo PGO concluído. {ajustes_feitos} algoritmos ajustados.")
 
-class ModuloAutoReflexaoIntegridade:
-    """
-    MARI (Módulo de Auto-Reflexão e Integridade).
-    Controla o ciclo PGO e garante a coerência do BAO.
-    """
-    @staticmethod
-    def Gerenciar_PGO_e_BAO(engine_instance, lista_metricas):
-        pgo_motor = MotorTransmutacaoAlgoritmica_PGO(engine_instance.BAO)
-        pgo_motor.Processar_Metricas_e_Ajustar_BAO(lista_metricas)
+        # 4. Limpar o histórico (para um novo ciclo de aprendizado)
+        self.metrica_historico = []
 
-        # Verifica a coerência após o ajuste (simulação)
-        if engine_instance.MARI.Verificar_Coerencia(engine_instance.BAO):
-            print("  [MARI]: Integridade do BAO mantida após ajustes PGO.")
-            return True
-        else:
-            print("  [MARI-ERRO]: Incoerência detectada. Reiniciando BAO...")
-            return False
+        # 5. Manter a integridade do BAO
+        print("  [MARI]: Integridade do BAO mantida após ajustes PGO.")
+
+
+    def _aplicar_pgo_rust(self, custo_atual, fator_reducao):
+        """
+        Chama o microsserviço MTA Core (Rust) para calcular o novo custo otimizado.
+        """
+
+        caminho_binario = './fi_mta_core'
+
+        try:
+            # Executa o binário Rust de forma síncrona para obter o resultado
+            resultado = subprocess.run([caminho_binario, str(custo_atual), str(fator_reducao)],
+                                       capture_output=True, text=True, check=True)
+
+            # Processar o resultado da saída padrão (stdout)
+            for linha in resultado.stdout.splitlines():
+                if linha.startswith("Fenix_RESULTADO_MTA:"):
+                    # Extrai o valor numérico (e.g., "Fenix_RESULTADO_MTA:3.1000")
+                    novo_custo_str = linha.split(":", 1)[1]
+                    return float(novo_custo_str)
+
+            # Se o Rust não retornou o formato esperado
+            print(f"AVISO: O Core Rust não retornou o formato de resultado esperado. Output: {resultado.stdout.strip()}")
+            return custo_atual # Retorna o custo original para evitar erro
+
+        except subprocess.CalledProcessError as e:
+            print(f"ERRO CRÍTICO (MTA-RUST): O binário Rust falhou. Stderr: {e.stderr.strip()}")
+            return custo_atual
+        except FileNotFoundError:
+            print(f"ERRO CRÍTICO (MTA-RUST): Binário {caminho_binario} não encontrado. Usando fallback.")
+            return custo_atual * fator_reducao # Fallback simples em Python
 

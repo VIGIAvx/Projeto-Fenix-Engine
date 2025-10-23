@@ -1,88 +1,69 @@
 # main.py
-# Arquivo principal para demonstrar a Transmutação Fênix.
+# Ponto de entrada da Fenix Execution Engine
 
+import os
+import sqlite3
+import time
+
+# CORREÇÃO APLICADA AQUI: AlgoritmoOtimo foi renomeado para AlgoritmoCIO
+from fi_knowledge_base import AlgoritmoCIO, BancoAlgoritmosOtimos
 from fi_runtime_core import FenixExecutionEngine
 from fi_transmuter_ia import Transmutar_Codigo
-from fi_knowledge_base import AlgoritmoOtimo, BancoAlgoritmosOtimos
+from fi_scheduling_sai import CamadaAbstracaoHeterogenea
 
-# --- Configuração de Métodos de Serviço (Mocks Mínimos) ---
-FenixExecutionEngine.Agendar_Tarefa_Compatibilidade = lambda self, ceo: print(f"     > Tarefa CEO Agendada: {ceo}")
+def main():
+    print("Iniciando a Fenix Execution Engine...")
+    
+    # 1. Inicialização da Engine
+    engine_fenix = FenixExecutionEngine(hardware_profile="AndroidTermux")
+    
+    # Exibe o estado inicial do MCA e BAO (para contexto)
+    print(f"Engine Fênix inicializada. BAO carregado.")
+    print(engine_fenix.MCA)
+    
+    # 2. Simular Transmutação de Código Bruto (MAI)
+    print("\n---------------------------------------------------")
+    print("SIMULANDO: Transmutar Código Bruto (Estado Inicial)")
+    print("---------------------------------------------------")
+    
+    # O MAI gera uma lista de CIOs a serem agendados
+    blocos_cio_para_agendar = Transmutar_Codigo("código_legado_com_O(n^2)_e_IO", engine_fenix)
+    
+    # 3. Execução e Agendamento (SAI/CAH)
+    print("\n---------------------------------------------------")
+    print("SIMULANDO: Agendamento e Execução (CAH Microsserviço Rust)")
+    print("---------------------------------------------------")
 
+    # Mostra o custo antes da execução (irá usar o custo persistido pelo PGO anterior)
+    custo_inicial_qs = engine_fenix.BAO.get_custo_cpu("CIO_2_QuickSort_P")
+    print(f"[Verificação Inicial]: Custo CPU do QuickSort ANTES do PGO: {custo_inicial_qs:.2f}")
 
-# 2. Inicialização da Fenix Execution Engine
-print("Iniciando a Fenix Execution Engine...")
+    engine_fenix.Agendar_Tarefas(blocos_cio_para_agendar)
+    
+    # Simula o fim da execução assíncrona
+    print("--- CAH: Execução Assíncrona Rust/GPU Despachada com Sucesso. ---")
 
-# Inicializa com um perfil genérico que será lido pelo PDH real
-engine_fenix = FenixExecutionEngine(hardware_profile="AndroidTermux") 
+    # 4. Auto-Reflexão e PGO (MARI/MTA)
+    engine_fenix.Auto_Reflexao_E_PGO()
+    
+    # 5. Verificação Final (Conhecimento Otimizado)
+    custo_final_qs = engine_fenix.BAO.get_custo_cpu("CIO_2_QuickSort_P")
+    print(f"[Verificação Final]: Custo CPU do QuickSort DEPOIS do PGO: {custo_final_qs:.2f}")
+    
+    if custo_final_qs < custo_inicial_qs:
+        print("\n[MTA-PGO SUCESSO]: O Motor Fênix aprendeu! O custo do QuickSort foi reduzido.")
+    else:
+        print("\n[MTA-PGO AVISO]: O custo do QuickSort não foi reduzido (já está otimizado ou não há dados).")
 
-print(f"Engine Fênix inicializada. BAO carregado.")
-print(f"MCA (Limite IO: {engine_fenix.MCA.limite_aceitavel_IO})")
-
-# 3. Código Bruto de Exemplo (Ineficiente)
-codigo_legado = """
-# Função Lenta de Merge Sort
-# ... código ...
-# Leitura de 10GB de log via Disco
-# ... código ...
-"""
-
-# 4. Iniciar a Transmutação
-print("\n---------------------------------------------------")
-print("SIMULANDO: Transmutar Código Bruto (Estado Inicial)")
-print("---------------------------------------------------")
-
-blocos_otimizados = Transmutar_Codigo(codigo_legado, engine_fenix)
-
-# 5. Agendar os blocos otimizados (Execução Real)
-print("\n---------------------------------------------------")
-print("SIMULANDO: Agendamento e Execução (CAH Multiprocessamento)")
-print("---------------------------------------------------")
-
-class BlocoCIO:
-    def __init__(self, ID, nome, custo_cpu, tipo_calculo="Geral"):
-        self.ID = ID 
-        self.nome = nome
-        self.custo_cpu = custo_cpu
-        self.tipo_calculo = tipo_calculo
-
-# Criamos mais blocos para simular carga
-bloco_exemplo_1 = BlocoCIO(ID="CIO_1", nome="Processamento Gráfico", custo_cpu=50, tipo_calculo="GPU_Intenso")
-bloco_exemplo_2 = BlocoCIO(ID="CIO_2", nome="Cálculo Algébrico", custo_cpu=200, tipo_calculo="CPU_Intenso")
-bloco_exemplo_3 = BlocoCIO(ID="CIO_3", nome="Análise de Dados", custo_cpu=150, tipo_calculo="CPU_Intenso")
-bloco_exemplo_4 = BlocoCIO(ID="CIO_4", nome="Renderização", custo_cpu=70, tipo_calculo="CPU_Intenso")
-
-# Guarda o custo inicial do QuickSort para comparação (Agora está DEPOIS da inicialização da engine)
-custo_inicial_quick_sort = engine_fenix.BAO.mapa_otimizacao["Problema B: Cálculo O(n^2)"].custo_cpu
-
-engine_fenix.Agendar_Tarefas([bloco_exemplo_1, bloco_exemplo_2, bloco_exemplo_3, bloco_exemplo_4])
-
-print(f"\n[Verificação Inicial]: Custo CPU do QuickSort ANTES do PGO: {custo_inicial_quick_sort:.2f}")
-
-# --- FECHAMENTO DO POOL DE PROCESSOS (CRÍTICO) ---
-cpu_pool_recurso = next((r for r in engine_fenix.Recursos_UHE if r.tipo == "CPU"), None)
-if cpu_pool_recurso and cpu_pool_recurso.pool:
-    cpu_pool_recurso.pool.close()
-    cpu_pool_recurso.pool.join()
-    print("--- CAH: Pool de Processos da CPU FINALIZADO com sucesso. ---")
-
-
-# 6. INICIAR O CICLO DE AUTO-REFLEXÃO (MTA-PGO)
-engine_fenix.Auto_Reflexao_E_PGO()
-
-
-# 7. VERIFICAR O RESULTADO DO PGO
-custo_final_quick_sort = engine_fenix.BAO.mapa_otimizacao["Problema B: Cálculo O(n^2)"].custo_cpu
-
-print(f"[Verificação Final]: Custo CPU do QuickSort DEPOIS do PGO: {custo_final_quick_sort:.2f}")
-if custo_final_quick_sort < custo_inicial_quick_sort:
-    print("\n[MTA-PGO SUCESSO]: O Motor Fênix aprendeu! O custo do QuickSort foi reduzido.")
-else:
-    print("\n[MTA-PGO FALHA]: O Motor Fênix não conseguiu aprender neste ciclo.")
-
-# 8. Resultado Final da Transmutação (Para manter o formato anterior)
-print("\n---------------------------------------------------")
-print("RESULTADO FINAL DA TRANSMUTAÇÃO:")
-for bloco in blocos_otimizados:
-    print(f"- {bloco}")
-print("---------------------------------------------------")
+    # 6. Sumário do Estado Final
+    print("\n---------------------------------------------------")
+    print("RESULTADO FINAL DA TRANSMUTAÇÃO:")
+    for bloco in blocos_cio_para_agendar:
+        # Pega a informação do BAO para ter o custo atualizado
+        custo = engine_fenix.BAO.get_custo_cpu(bloco.ID)
+        print(f"- CIO Bloco: {bloco.nome} (Custo Final CPU: {custo:.2f})")
+    print("---------------------------------------------------")
+    
+if __name__ == "__main__":
+    main()
 

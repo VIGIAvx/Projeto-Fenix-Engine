@@ -1,126 +1,92 @@
 # fi_knowledge_base.py
-import psutil
+# Banco de Algoritmos Otimizados (BAO) e Armazenamento de Conhecimento (SQLite)
+
 import sqlite3
+import os
 
-# Nome do arquivo do Banco de Dados para persistência
-DB_NAME = 'fenix_bao.db' 
-
-class AlgoritmoOtimo:
-    """Representa um algoritmo otimizado e seus custos conhecidos."""
-    def __init__(self, nome, complexidade, custo_io_padrao, custo_cpu_padrao):
+class AlgoritmoCIO:
+    """Representa um Bloco de Instrução/Otimização (CIO) com seus custos."""
+    def __init__(self, nome, custo_cpu, custo_io, tipo):
         self.nome = nome
-        self.complexidade = complexidade
-        self.custo_io = custo_io_padrao
-        self.custo_cpu = custo_cpu_padrao
-
-    def __repr__(self):
-        return f"AlgoritmoOtimo('{self.nome}', C_CPU:{self.custo_cpu:.2f})"
+        self.custo_cpu = custo_cpu
+        self.custo_io = custo_io
+        self.tipo = tipo # Ex: "CPU_Bound", "IO_Bound"
+        self.ID = nome # Simplificação para ID
 
 class BancoAlgoritmosOtimos:
-    """
-    BAO (Banco de Algoritmos Ótimos) Persistente com SQLite.
-    """
+    """Gerencia os custos persistentes dos algoritmos no SQLite."""
     def __init__(self):
-        self.conexao = sqlite3.connect(DB_NAME)
-        self.cursor = self.conexao.cursor()
-        self._criar_tabela_se_necessario()
-        self.mapa_otimizacao = self._carregar_algoritmos() # Mapeamento em RAM para acesso rápido
+        # Mapeamento: Nome do Problema -> AlgoritmoCIO (contém custos atuais)
+        self.mapa_otimizacao = {} 
+        self._inicializar_simulacao_sqlite()
+        self._carregar_custos()
 
-    def _criar_tabela_se_necessario(self):
+    def _inicializar_simulacao_sqlite(self):
+        self.db_path = "fenix_knowledge.db"
+        self.conn = sqlite3.connect(self.db_path)
+        self.cursor = self.conn.cursor()
+
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS algoritmos (
-                problema_identificado TEXT PRIMARY KEY,
-                nome TEXT,
-                complexidade TEXT,
-                custo_io REAL,
-                custo_cpu REAL
+            CREATE TABLE IF NOT EXISTS custos (
+                nome TEXT PRIMARY KEY,
+                custo_cpu REAL,
+                custo_io REAL
             )
         """)
-        self.conexao.commit()
+        self.conn.commit()
 
-        # Algoritmos Base (Seed Data) - Inseridos apenas se o banco estiver vazio
-        base_algoritmos = [
-            ("Problema B: Cálculo O(n^2)", "QuickSort Paralelo", "O(n log n)", 5.0, 8.0),
-            ("Problema de Busca Lenta", "Hash Index Lookup", "O(1)", 2.0, 1.0),
-            ("Problema de I/O Pesado", "Leitura Assíncrona Chunked", "O(k)", 100.0, 3.0),
-            ("Problema Não Identificado", "Algoritmo Legado", "O(n!)", 100.0, 100.0)
-        ]
+    def _carregar_custos(self):
+        """Carrega custos persistentes ou insere valores default para simulação."""
 
-        for problema, nome, complexidade, custo_io, custo_cpu in base_algoritmos:
-            self.cursor.execute("""
-                INSERT OR IGNORE INTO algoritmos VALUES (?, ?, ?, ?, ?)
-            """, (problema, nome, complexidade, custo_io, custo_cpu))
-        self.conexao.commit()
+        # Algoritmos Default (incluindo o estado do último ciclo PGO para QuickSort)
+        default_algoritmos = {
+            "CIO_1_Min_IO": AlgoritmoCIO("Variante Min-IO", 5.0, 100.0, "IO_Bound"),
+            "CIO_2_QuickSort_P": AlgoritmoCIO("QuickSort Paralelo", 3.44, 0.5, "CPU_Bound"),
+            "CIO_3_QuickSort_P": AlgoritmoCIO("QuickSort Paralelo", 3.44, 0.5, "CPU_Bound"),
+            "CIO_4_QuickSort_P": AlgoritmoCIO("QuickSort Paralelo", 3.44, 0.5, "CPU_Bound"),
+        }
 
-    def _carregar_algoritmos(self):
-        self.cursor.execute("SELECT * FROM algoritmos")
-        dados = self.cursor.fetchall()
-        mapa = {}
-        for problema, nome, complexidade, custo_io, custo_cpu in dados:
-            mapa[problema] = AlgoritmoOtimo(nome, complexidade, custo_io, custo_cpu)
-        return mapa
+        # Carrega do DB
+        db_data = self.cursor.execute("SELECT nome, custo_cpu, custo_io FROM custos").fetchall()
 
-    def Buscar_Substituicao(self, problema_identificado):
-        return self.mapa_otimizacao.get(
-            problema_identificado, 
-            self.mapa_otimizacao["Problema Não Identificado"]
-        )
-
-    def Salvar_Algoritmo_Ajustado(self, problema_identificado, algoritmo_ajustado):
-        """Persiste o custo ajustado pelo PGO no banco de dados."""
-        self.cursor.execute("""
-            UPDATE algoritmos
-            SET custo_io = ?, custo_cpu = ?
-            WHERE problema_identificado = ?
-        """, (algoritmo_ajustado.custo_io, algoritmo_ajustado.custo_cpu, problema_identificado))
-        self.conexao.commit()
-        # Atualiza o mapa em RAM
-        self.mapa_otimizacao[problema_identificado] = algoritmo_ajustado
-
-
-# Classes MCA e PDH mantidas
-class ModeloCustoAbstrato:
-    """MCA (Modelo de Custo Abstrato). Parâmetros de custo calibrados."""
-    def __init__(self, limite_io, fator_cpu_core):
-        self.limite_aceitavel_IO = limite_io
-        self.fator_cpu_core = fator_cpu_core
-        print(f"  [MCA]: Calibrado. Fator CPU: {fator_cpu_core}x. Limite IO: {limite_io}.")
-
-class PerfilamentoDinamicoHardware:
-    """
-    PDH (Perfilamento Dinâmico de Hardware) REAL. 
-    Mede o hardware e calibra o MCA.
-    """
-    @staticmethod
-    def Calibrar_Custos_Hardware(hardware_profile):
-        print(f"  [PDH Real]: Perfilando ambiente usando psutil...")
-
-        num_cores = psutil.cpu_count(logical=True)
-        fator_cpu = max(1.0, num_cores / 4) 
-
-        memoria = psutil.virtual_memory()
-        ram_disponivel_gb = memoria.available / (1024 ** 3)
-
-        if ram_disponivel_gb < 1.0:
-             limite_io_calibrado = 15
-             ram_status = "CRÍTICO"
+        if not db_data:
+            # Se o banco está vazio, insere defaults
+            for nome, algo in default_algoritmos.items():
+                self.cursor.execute("INSERT INTO custos VALUES (?, ?, ?)", 
+                                    (nome, algo.custo_cpu, algo.custo_io))
+                self.mapa_otimizacao[nome] = algo
+            self.conn.commit()
         else:
-             limite_io_calibrado = 8 
-             ram_status = "OK"
+            # Se há dados, carrega os custos otimizados (especialmente o último custo do QuickSort)
+            ultimo_custo_qs = default_algoritmos["CIO_2_QuickSort_P"].custo_cpu
+            for nome, custo_cpu, custo_io in db_data:
+                if "QuickSort" in nome:
+                    ultimo_custo_qs = custo_cpu # Carrega o último custo salvo (pode ser 2.26, 2.03, etc.)
 
-        print(f"  [PDH Status]: Cores: {num_cores}, RAM Livre: {ram_disponivel_gb:.2f} GB ({ram_status})")
-        return ModeloCustoAbstrato(limite_io_calibrado, fator_cpu)
+            # Atualiza o mapa com o custo persistido
+            for nome, algo in default_algoritmos.items():
+                if "QuickSort" in nome:
+                    algo.custo_cpu = ultimo_custo_qs
+                self.mapa_otimizacao[nome] = algo
 
+    def persistir_custo(self, nome_problema, novo_custo):
+        """
+        [MÉTODO CORRIGIDO] Atualiza o custo CPU de um algoritmo persistente no SQLite.
+        Salva o custo de volta, mantendo a integridade do conhecimento.
+        """
 
-class ModuloAutoReflexaoIntegridade:
-    """MARI (Módulo de Auto-Reflexão e Integridade)."""
-    def __init__(self, BAO_instance):
-        self.BAO = BAO_instance
+        # 1. Atualizar o SQLite com o novo custo
+        # Atualiza o custo para todos os blocos QuickSort Paralelo (assumindo otimização de perfil)
+        self.cursor.execute("UPDATE custos SET custo_cpu = ? WHERE nome LIKE 'CIO_%QuickSort_P'", 
+                            (novo_custo,))
+        self.conn.commit()
 
-    def Carregar_Banco_Integridade(self):
-        print("  [MARI]: Verificação de integridade do BAO concluída (Persistente).")
-        return self.BAO
+        # 2. Atualizar o mapa interno (em memória)
+        for nome in self.mapa_otimizacao:
+             if "QuickSort Paralelo" in self.mapa_otimizacao[nome].nome:
+                self.mapa_otimizacao[nome].custo_cpu = novo_custo
 
-    def Verificar_Coerencia(self, BAO_para_verificar):
-        return True
+    def get_custo_cpu(self, nome_algoritmo):
+        """Retorna o custo CPU atual para o algoritmo nomeado."""
+        return self.mapa_otimizacao.get(nome_algoritmo, AlgoritmoCIO("", 0, 0, "")).custo_cpu
 

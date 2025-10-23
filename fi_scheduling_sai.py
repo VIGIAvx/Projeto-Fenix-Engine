@@ -1,22 +1,15 @@
 # fi_scheduling_sai.py
 # Módulo de Agendamento Inteligente (SAI) e Abstração de Hardware (CAH)
 
-# Importação para execução paralela real!
+# Importação para execução real via subprocesso (Rust)
 from multiprocessing import Pool
-from fi_knowledge_base import ModeloCustoAbstrato
+# Importação CORRIGIDA: MCA está agora no módulo de perfilamento
+from fi_profile_hardware import ModeloCustoAbstrato 
 import time
 import os
+import subprocess 
 
-# Função externa para o Pool de processos (não pode ser um método de classe)
-def simular_execucao_bloco(bloco_id, recurso_nome, tempo_simulado):
-    """Simula o trabalho real do bloco de código em um processo separado."""
-    pid = os.getpid()
-    # print(f"        [CAH-Processo {pid}]: Bloco {bloco_id} INICIADO no {recurso_nome} por {tempo_simulado:.2f}s.")
-    time.sleep(tempo_simulado) # Simula o tempo de trabalho
-    # print(f"        [CAH-Processo {pid}]: Bloco {bloco_id} FINALIZADO.")
-    return f"Bloco {bloco_id} concluído por PID {pid} em {recurso_nome}."
-
-
+# Classe de recurso mantida
 class UnidadeRecurso:
     """Representa uma unidade de recurso (Core, GPU, etc.) com seu custo real."""
     def __init__(self, nome, tipo, fator_velocidade, custo_por_ciclo):
@@ -25,7 +18,7 @@ class UnidadeRecurso:
         self.fator_velocidade = fator_velocidade
         self.custo_por_ciclo = custo_por_ciclo
         self.carga_atual = 0 
-        self.pool = None # Pool de multiprocessamento para CPUs
+        self.pool = None
         self.processos_ativos = 0
 
     def __str__(self):
@@ -41,20 +34,21 @@ class CamadaAbstracaoHeterogenea:
         pool = []
         fator_cpu_calibrado = MCA.fator_cpu_core
 
-        # Criamos um único recurso de CPU que gerencia um Pool de Threads/Processos
+        # Recurso CPU: Gerencia a execução dos Microsserviços Rust
+        # O número de tarefas paralelas reflete o fator calibrado do MCA.
         num_processos = max(1, int(fator_cpu_calibrado)) 
         cpu_pool_recurso = UnidadeRecurso(
-            nome="CPU_Pool", 
+            nome="CPU_Rust_Pool", 
             tipo="CPU", 
             fator_velocidade=1.0 * num_processos, 
             custo_por_ciclo=0.01
         )
-        # Inicializa o Pool de processos real
-        cpu_pool_recurso.pool = Pool(processes=num_processos) 
+        # Mantemos o objeto para compatibilidade de contagem
+        cpu_pool_recurso.pool = object() 
         pool.append(cpu_pool_recurso)
 
         if GPU:
-            # Recurso de GPU (simulado como thread/processo único)
+            # Recurso de GPU (simulado)
             pool.append(UnidadeRecurso(
                 nome="GPU_Unica", 
                 tipo="GPU", 
@@ -62,32 +56,33 @@ class CamadaAbstracaoHeterogenea:
                 custo_por_ciclo=0.05 
             ))
 
-        print(f"  [CAH Real]: Pool UHE gerado. CPU_Pool com {num_processos} processos.")
+        print(f"  [CAH Real]: Pool UHE gerado. CPU_Rust_Pool pronto para {num_processos} tarefas paralelas.")
         return pool
 
     @staticmethod
     def Executar_Bloco(bloco, recurso_otimo):
-        """Despacha o bloco de cálculo para o recurso escolhido (SAI)."""
+        """Despacha o bloco de cálculo para o binário Rust ou simula GPU."""
 
-        tempo_simulado = bloco.custo_cpu / recurso_otimo.fator_velocidade / 10 # Reduzimos o tempo para o teste ser rápido
+        # O tempo simulado é o argumento passado para o microsserviço Rust (Rust simula o tempo de execução)
+        tempo_simulado = bloco.custo_cpu / recurso_otimo.fator_velocidade / 10 
 
         if recurso_otimo.tipo == "CPU":
-            # Execução Paralela Real (Multiprocessing)
-            # Usamos apply_async para não bloquear o Fenix Engine
-            recurso_otimo.pool.apply_async(simular_execucao_bloco, 
-                args=(bloco.ID, recurso_otimo.nome, tempo_simulado),
-                callback=CamadaAbstracaoHeterogenea.Callback_Execucao # Chamada de retorno
-            )
-            print(f"     > CAH: Bloco {bloco.ID} DESPACHADO para {recurso_otimo.nome} (Multiprocessamento).")
+            # --- Execução via Binário Rust (Assíncrono) ---
+            caminho_binario = './fi_micros_cah'
+
+            # Chamamos o microsserviço Rust em background (fire-and-forget)
+            subprocess.Popen([caminho_binario, str(tempo_simulado)], 
+                             stdout=subprocess.PIPE, 
+                             stderr=subprocess.PIPE)
+
+            print(f"     > CAH: Bloco {bloco.ID} DESPACHADO para {recurso_otimo.nome} (Binário Rust) por {tempo_simulado:.2f}s.")
         else:
             # Simulação de execução em GPU
-            # Aqui você usaria CUDA/OpenCL (simulamos a execução em thread único)
             print(f"     > CAH: Bloco {bloco.ID} DESPACHADO para {recurso_otimo.nome} (Simulação GPU).")
 
     @staticmethod
     def Callback_Execucao(resultado):
-        """Recebe o resultado do processo paralelo e imprime o status."""
-        # print(f"     > CAH-Callback: {resultado}")
+        # Não é mais usado, mas mantido para evitar erros
         pass
 
 class ServicoAgendamentoInteligente:
@@ -96,7 +91,7 @@ class ServicoAgendamentoInteligente:
     Aplica a lógica de decisão otimizada.
     """
     @staticmethod
-    def Escolher_Recurso(bloco_cio, recursos_uhe, mca):
+    def Escolher_Recurso(bloco_cio, recursos_uhe, mca: ModeloCustoAbstrato):
         recurso_escolhido = None
         melhor_custo_estimado = float('inf')
 
@@ -104,18 +99,19 @@ class ServicoAgendamentoInteligente:
             # O Custo é inversamente proporcional à velocidade do recurso
             custo_estimado = (bloco_cio.custo_cpu / recurso.fator_velocidade) * mca.fator_cpu_core
 
-            # Penalidade de Carga: Se for o recurso de CPU (Pool), consideramos a carga
+            # Penalidade de Carga 
             if recurso.tipo == "CPU":
-                custo_estimado += recurso.processos_ativos * 5 # Aumenta a penalidade de carga
+                custo_estimado += recurso.processos_ativos * 5 
 
             if custo_estimado < melhor_custo_estimado:
                 melhor_custo_estimado = custo_estimado
                 recurso_escolhido = recurso
 
-        # Simula a ocupação: Se for CPU, aumenta a contagem de processos ativos no pool
+        # Simula a ocupação
         if recurso_escolhido.tipo == "CPU":
             recurso_escolhido.processos_ativos += 1
 
+        # CORREÇÃO APLICADA: recurso_escolhidos -> recurso_escolhido
         print(f"  [SAI]: Escolhido {recurso_escolhido.nome} (Custo Est.: {melhor_custo_estimado:.2f}, Pool: {recurso_escolhido.processos_ativos} atv.)")
         return recurso_escolhido
 

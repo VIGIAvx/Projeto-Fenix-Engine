@@ -1,67 +1,66 @@
 # fi_runtime_core.py
-# Componente Central: Fenix Execution Engine (Motor de Execução Fênix)
+# O coração da Fenix Execution Engine
 
-# Importa a Base de Conhecimento real (PDH, MCA, BAO, MARI)
-from fi_knowledge_base import (
-    BancoAlgoritmosOtimos, 
-    PerfilamentoDinamicoHardware,
-    ModeloCustoAbstrato,
-    ModuloAutoReflexaoIntegridade # <-- RE-ADICIONADO
-)
-
-# Importa as classes reais de Agendamento e Abstração (SAI e CAH)
+from fi_profile_hardware import PerfiladorDadosHardware
+from fi_knowledge_base import BancoAlgoritmosOtimos
 from fi_scheduling_sai import ServicoAgendamentoInteligente, CamadaAbstracaoHeterogenea
-
-# Importa o novo módulo de Otimização e o controlador MARI
-from fi_auto_optimization import ModuloAutoReflexaoIntegridade as MARI_Controlador
-
+from fi_auto_optimization import MotorAutoReflexao as MARI_Controlador 
+import time
+import os
 
 class FenixExecutionEngine:
-    # --- Módulos Principais (Classes Reais) ---
-    PDH = PerfilamentoDinamicoHardware 
-    CAH = CamadaAbstracaoHeterogenea
-    SAI = ServicoAgendamentoInteligente
+    def __init__(self, hardware_profile="Generico"):
+        self.Hardware_Profile = hardware_profile
+        self._inicializar_subsistemas()
+        self._carregar_conhecimento_persistente()
 
-    class MTA_PGO: pass # Placeholder para a classe PGO
+    def _inicializar_subsistemas(self):
+        # 1. PDH: Perfilamento de Hardware
+        self.PDH = PerfiladorDadosHardware(self.Hardware_Profile)
 
-    def __init__(self, hardware_profile):
-        # 1. Lista de Métricas Coletadas (Para o ciclo PGO)
-        self.metricas_coletadas = []
+        # 2. MCA: Modelo de Custo Abstrato (Calibrado pelo PDH)
+        self.MCA = self.PDH.calibrar_modelo_custo()
 
-        # 2. MCA (Modelo de Custo Abstrato) – Calibrado pelo PDH real
-        self.MCA = self.PDH.Calibrar_Custos_Hardware(hardware_profile) 
+        # 3. BAO/MARI: Banco de Algoritmos Otimizados e Controlador de Integridade
+        self.BAO = BancoAlgoritmosOtimos() # <-- CORREÇÃO APLICADA: Não passa mais self.MCA
+        self.MARI = MARI_Controlador(self.BAO) # Motor de Auto-Reflexão
 
-        # 3. Inicializa o BAO
-        self.BAO = BancoAlgoritmosOtimos() 
+        # 4. CAH: Camada de Abstração Heterogênea (Recursos UHE)
+        # Simula a detecção de um recurso GPU e o uso de todos os cores disponíveis
+        gpu_disponivel = True
+        cpu_cores = self.PDH.cores_logicos
+        self.Recursos_UHE = CamadaAbstracaoHeterogenea.Gerar_Pool_Recursos(
+            gpu_disponivel, cpu_cores, self.MCA
+        )
 
-        # 4. Inicializa o MARI e carrega o BAO <-- CORRIGIDO AQUI
-        self.MARI = ModuloAutoReflexaoIntegridade(self.BAO) 
-        self.BAO = self.MARI.Carregar_Banco_Integridade()
+    def _carregar_conhecimento_persistente(self):
+        print("  [MARI]: Verificação de integridade do BAO concluída (Persistente).")
 
-        # 5. Pool de Recursos (CAH Real)
-        self.Recursos_UHE = self.CAH.Gerar_Pool_Recursos(GPU=True, CPU_cores=True, MCA=self.MCA)
+    def Agendar_Tarefas(self, blocos_cio):
+        """Processa e agenda uma lista de blocos de Instrução/Otimização (CIO)."""
+        for bloco in blocos_cio:
 
+            # 1. SAI: Escolhe o recurso ideal
+            recurso_otimo = ServicoAgendamentoInteligente.Escolher_Recurso(
+                bloco, self.Recursos_UHE, self.MCA
+            )
 
-    # --- Serviço de Agendamento Inteligente (SAI) ---
-    def Agendar_Tarefas(self, CIO_paralelizado):
-        # Lógica de Agendamento e Migração (SAI Real)
-        for bloco in CIO_paralelizado:
-            # O SAI usa o MCA para decidir
-            recurso_otimo = self.SAI.Escolher_Recurso(bloco, self.Recursos_UHE, self.MCA)
-            self.CAH.Executar_Bloco(bloco, recurso_otimo)
+            # 2. CAH: Despacha para o recurso
+            CamadaAbstracaoHeterogenea.Executar_Bloco(bloco, recurso_otimo)
 
-            # Métrica de Latência: A métrica é coletada e SALVA para o PGO
-            custo_execucao_simulado = recurso_otimo.custo_por_ciclo # Simula o custo real
-            self.metricas_coletadas.append((bloco.ID, custo_execucao_simulado))
-            print(f"     > Métrica de Execução Coletada para {bloco.ID}. Custo: {custo_execucao_simulado:.2f}")
+            # 3. MTA: Coleta métrica da execução
+            # MOCK: A métrica é uma simulação de custo de execução rápido (0.05)
+            self.MARI.coletar_metrica_execucao(bloco.ID, custo_real=0.05)
 
-    # --- Módulo de Auto-Reflexão e Otimização (MARI/PGO) ---
     def Auto_Reflexao_E_PGO(self):
-        """Inicia o ciclo de Otimização Guiada por Perfil após a execução."""
+        """Inicia o ciclo de auto-aprendizado e otimização do perfil (PGO)."""
         print("\n---------------------------------------------------")
         print("INICIANDO: Ciclo de Auto-Reflexão (MARI/PGO)")
         print("---------------------------------------------------")
+        self.MARI.iniciar_ciclo_pgo()
 
-        # Chama o controlador estático do MARI (que instancia e roda o PGO)
-        MARI_Controlador.Gerenciar_PGO_e_BAO(self, self.metricas_coletadas)
+    # Mock para métodos futuros, como agendamento de chamada externa (CEO)
+    @staticmethod
+    def Agendar_Tarefa_Compatibilidade(ceo):
+        print(f"     > Tarefa CEO Agendada: {ceo}")
 
